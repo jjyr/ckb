@@ -6,6 +6,7 @@ use ckb_core::cell::{CellProvider, CellStatus};
 use ckb_core::header::Header;
 use ckb_core::transaction::{Capacity, CellInput, OutPoint};
 use ckb_core::Cycle;
+use ckb_script::ChainContext;
 use ckb_shared::shared::ChainProvider;
 use fnv::{FnvHashMap, FnvHashSet};
 use merkle_root::merkle_root;
@@ -429,7 +430,7 @@ impl<'a, P: CellProvider> CellProvider for TransactionsVerifierWrapper<'a, P> {
     }
 }
 
-impl<P: ChainProvider + CellProvider> TransactionsVerifier<P> {
+impl<P: ChainProvider + CellProvider + Clone> TransactionsVerifier<P> {
     pub fn new(provider: P) -> Self {
         TransactionsVerifier { provider }
     }
@@ -447,6 +448,12 @@ impl<P: ChainProvider + CellProvider> TransactionsVerifier<P> {
         };
 
         let parent_hash = block.header().parent_hash();
+        let parent_number = block.header().number().saturating_sub(1);
+        let chain_context = ChainContext {
+            provider: &self.provider,
+            parent_block_hash: parent_hash,
+            parent_block_number: parent_number,
+        };
         let max_cycles = self.provider.consensus().max_block_cycles();
         // make verifiers orthogonal
         // skip first tx, assume the first is cellbase, other verifier will verify cellbase
@@ -459,7 +466,7 @@ impl<P: ChainProvider + CellProvider> TransactionsVerifier<P> {
             .try_fold(
                 || 0,
                 |cycles: Cycle, (index, tx)| {
-                    TransactionVerifier::new(&tx)
+                    TransactionVerifier::with_chain_context(&tx, &chain_context)
                         .verify(max_cycles)
                         .map_err(|e| Error::Transactions((index, e)))
                         .and_then(|current_cycles| {

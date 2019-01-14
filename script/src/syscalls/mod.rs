@@ -1,5 +1,6 @@
 mod builder;
 mod debugger;
+mod load_block_info;
 mod load_cell;
 mod load_cell_by_field;
 mod load_input_by_field;
@@ -8,6 +9,7 @@ mod utils;
 
 pub use self::builder::build_tx;
 pub use self::debugger::Debugger;
+pub use self::load_block_info::LoadBlockInfo;
 pub use self::load_cell::LoadCell;
 pub use self::load_cell_by_field::LoadCellByField;
 pub use self::load_input_by_field::LoadInputByField;
@@ -22,6 +24,7 @@ pub const LOAD_TX_SYSCALL_NUMBER: u64 = 2049;
 pub const LOAD_CELL_SYSCALL_NUMBER: u64 = 2053;
 pub const LOAD_CELL_BY_FIELD_SYSCALL_NUMBER: u64 = 2054;
 pub const LOAD_INPUT_BY_FIELD_SYSCALL_NUMBER: u64 = 2055;
+pub const LOAD_BLOCK_INFO_SYSCALL_NUMBER: u64 = 2056;
 pub const DEBUG_PRINT_SYSCALL_NUMBER: u64 = 2177;
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq)]

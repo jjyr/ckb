@@ -1,13 +1,17 @@
 use crate::{
     cost_model::instruction_cycles,
-    syscalls::{build_tx, Debugger, LoadCell, LoadCellByField, LoadInputByField, LoadTx},
+    syscalls::{
+        build_tx, Debugger, LoadBlockInfo, LoadCell, LoadCellByField, LoadInputByField, LoadTx,
+    },
     ScriptError,
 };
 use ckb_core::cell::ResolvedTransaction;
+use ckb_core::header::BlockNumber;
 use ckb_core::script::Script;
 use ckb_core::transaction::{CellInput, CellOutput};
 use ckb_core::Cycle;
 use ckb_protocol::{FlatbuffersVectorIterator, Script as FbsScript};
+use ckb_shared::shared::ChainProvider;
 use ckb_vm::{CoreMachine, DefaultMachine, SparseMemory};
 use flatbuffers::{get_root, FlatBufferBuilder};
 use fnv::FnvHashMap;
@@ -17,7 +21,7 @@ use numext_fixed_hash::H256;
 // This struct leverages CKB VM to verify transaction inputs.
 // FlatBufferBuilder owned Vec<u8> that grows as needed, in the
 // future, we might refactor this to share buffer to achive zero-copy
-pub struct TransactionScriptsVerifier<'a> {
+pub struct TransactionScriptsVerifier<'a, CP: ChainProvider + Clone> {
     dep_cell_index: FnvHashMap<H256, &'a CellOutput>,
     inputs: Vec<&'a CellInput>,
     outputs: Vec<&'a CellOutput>,
@@ -25,10 +29,18 @@ pub struct TransactionScriptsVerifier<'a> {
     input_cells: Vec<&'a CellOutput>,
     dep_cells: Vec<&'a CellOutput>,
     hash: H256,
+    chain_context: Option<&'a ChainContext<'a, CP>>,
 }
 
-impl<'a> TransactionScriptsVerifier<'a> {
-    pub fn new(rtx: &'a ResolvedTransaction) -> TransactionScriptsVerifier<'a> {
+#[derive(Debug)]
+pub struct ChainContext<'a, CP: ChainProvider + Clone> {
+    pub provider: &'a CP,
+    pub parent_block_hash: &'a H256,
+    pub parent_block_number: BlockNumber,
+}
+
+impl<'a, CP: ChainProvider + Clone> TransactionScriptsVerifier<'a, CP> {
+    pub fn new(rtx: &'a ResolvedTransaction) -> TransactionScriptsVerifier<'a, CP> {
         let dep_cells: Vec<&'a CellOutput> = rtx
             .dep_cells
             .iter()
@@ -69,7 +81,17 @@ impl<'a> TransactionScriptsVerifier<'a> {
             input_cells,
             dep_cells,
             hash: rtx.transaction.hash().clone(),
+            chain_context: None,
         }
+    }
+
+    pub fn with_chain_context(
+        rtx: &'a ResolvedTransaction,
+        chain_context: &'a ChainContext<'a, CP>,
+    ) -> TransactionScriptsVerifier<'a, CP> {
+        let mut script_verifier = Self::new(rtx);
+        script_verifier.chain_context = Some(chain_context);
+        script_verifier
     }
 
     fn build_load_tx(&self) -> LoadTx {
@@ -96,6 +118,17 @@ impl<'a> TransactionScriptsVerifier<'a> {
 
     fn build_load_input_by_field(&self, current_input: Option<&'a CellInput>) -> LoadInputByField {
         LoadInputByField::new(&self.inputs, current_input)
+    }
+
+    fn build_load_block_info(
+        &self,
+        chain_context: &'a ChainContext<'a, CP>,
+    ) -> LoadBlockInfo<'a, CP> {
+        LoadBlockInfo::new(
+            &chain_context.provider,
+            chain_context.parent_block_hash,
+            chain_context.parent_block_number,
+        )
     }
 
     // Script struct might contain references to external cells, this
@@ -160,6 +193,9 @@ impl<'a> TransactionScriptsVerifier<'a> {
                 machine.add_syscall_module(Box::new(self.build_load_cell(current_cell)));
                 machine.add_syscall_module(Box::new(self.build_load_cell_by_field(current_cell)));
                 machine.add_syscall_module(Box::new(self.build_load_input_by_field(current_input)));
+                if let Some(chain_context) = self.chain_context {
+                    machine.add_syscall_module(Box::new(self.build_load_block_info(chain_context)));
+                }
                 machine.add_syscall_module(Box::new(Debugger::new(prefix)));
                 machine
                     .run(script_binary, &args)
@@ -213,6 +249,7 @@ impl<'a> TransactionScriptsVerifier<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::dummy::DummyChainProvider;
     use ckb_core::cell::CellStatus;
     use ckb_core::script::Script;
     use ckb_core::transaction::{CellInput, CellOutput, OutPoint, TransactionBuilder};
@@ -276,7 +313,7 @@ mod tests {
             input_cells: vec![CellStatus::Live(dummy_cell)],
         };
 
-        let verifier = TransactionScriptsVerifier::new(&rtx);
+        let verifier = TransactionScriptsVerifier::<DummyChainProvider>::new(&rtx);
 
         assert!(verifier.verify(100000000).is_ok());
     }
@@ -321,7 +358,7 @@ mod tests {
             input_cells: vec![CellStatus::Live(dummy_cell)],
         };
 
-        let verifier = TransactionScriptsVerifier::new(&rtx);
+        let verifier = TransactionScriptsVerifier::<DummyChainProvider>::new(&rtx);
 
         assert!(verifier.verify(100).is_err());
     }
@@ -368,7 +405,7 @@ mod tests {
             input_cells: vec![CellStatus::Live(dummy_cell)],
         };
 
-        let verifier = TransactionScriptsVerifier::new(&rtx);
+        let verifier = TransactionScriptsVerifier::<DummyChainProvider>::new(&rtx);
 
         assert!(verifier.verify(100000000).is_err());
     }
@@ -423,7 +460,7 @@ mod tests {
             input_cells: vec![CellStatus::Live(dummy_cell)],
         };
 
-        let verifier = TransactionScriptsVerifier::new(&rtx);
+        let verifier = TransactionScriptsVerifier::<DummyChainProvider>::new(&rtx);
 
         assert!(verifier.verify(100000000).is_ok());
     }
@@ -474,7 +511,7 @@ mod tests {
             input_cells: vec![CellStatus::Live(dummy_cell)],
         };
 
-        let verifier = TransactionScriptsVerifier::new(&rtx);
+        let verifier = TransactionScriptsVerifier::<DummyChainProvider>::new(&rtx);
 
         assert!(verifier.verify(100000000).is_err());
     }
@@ -531,7 +568,7 @@ mod tests {
             input_cells: vec![CellStatus::Live(dummy_cell)],
         };
 
-        let verifier = TransactionScriptsVerifier::new(&rtx);
+        let verifier = TransactionScriptsVerifier::<DummyChainProvider>::new(&rtx);
 
         assert!(verifier.verify(100000000).is_ok());
     }
@@ -582,7 +619,7 @@ mod tests {
             input_cells: vec![CellStatus::Live(dummy_cell)],
         };
 
-        let verifier = TransactionScriptsVerifier::new(&rtx);
+        let verifier = TransactionScriptsVerifier::<DummyChainProvider>::new(&rtx);
 
         assert!(verifier.verify(100000000).is_err());
     }

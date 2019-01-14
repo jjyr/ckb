@@ -2,25 +2,40 @@ use crate::error::TransactionError;
 use ckb_core::cell::ResolvedTransaction;
 use ckb_core::transaction::{Capacity, Transaction};
 use ckb_core::Cycle;
-use ckb_script::TransactionScriptsVerifier;
+use ckb_script::{ChainContext, TransactionScriptsVerifier};
+use ckb_shared::shared::ChainProvider;
 use std::collections::HashSet;
 
-pub struct TransactionVerifier<'a> {
+pub struct TransactionVerifier<'a, CP: ChainProvider + Clone> {
     pub null: NullVerifier<'a>,
     pub empty: EmptyVerifier<'a>,
     pub capacity: CapacityVerifier<'a>,
     pub duplicate_inputs: DuplicateInputsVerifier<'a>,
     pub inputs: InputVerifier<'a>,
-    pub script: ScriptVerifier<'a>,
+    pub script: ScriptVerifier<'a, CP>,
 }
 
-impl<'a> TransactionVerifier<'a> {
-    pub fn new(rtx: &'a ResolvedTransaction) -> Self {
+impl<'a, CP: ChainProvider + Clone> TransactionVerifier<'a, CP> {
+    pub fn new(rtx: &'a ResolvedTransaction) -> TransactionVerifier<CP> {
         TransactionVerifier {
             null: NullVerifier::new(&rtx.transaction),
             empty: EmptyVerifier::new(&rtx.transaction),
             duplicate_inputs: DuplicateInputsVerifier::new(&rtx.transaction),
             script: ScriptVerifier::new(rtx),
+            capacity: CapacityVerifier::new(rtx),
+            inputs: InputVerifier::new(rtx),
+        }
+    }
+
+    pub fn with_chain_context(
+        rtx: &'a ResolvedTransaction,
+        chain_context: &'a ChainContext<CP>,
+    ) -> TransactionVerifier<'a, CP> {
+        TransactionVerifier {
+            null: NullVerifier::new(&rtx.transaction),
+            empty: EmptyVerifier::new(&rtx.transaction),
+            duplicate_inputs: DuplicateInputsVerifier::new(&rtx.transaction),
+            script: ScriptVerifier::with_chain_context(rtx, chain_context),
             capacity: CapacityVerifier::new(rtx),
             inputs: InputVerifier::new(rtx),
         }
@@ -78,21 +93,41 @@ impl<'a> InputVerifier<'a> {
     }
 }
 
-pub struct ScriptVerifier<'a> {
+pub struct ScriptVerifier<'a, CP: ChainProvider + Clone> {
     resolved_transaction: &'a ResolvedTransaction,
+    chain_context: Option<&'a ChainContext<'a, CP>>,
 }
 
-impl<'a> ScriptVerifier<'a> {
+impl<'a, CP: ChainProvider + Clone> ScriptVerifier<'a, CP> {
     pub fn new(resolved_transaction: &'a ResolvedTransaction) -> Self {
         ScriptVerifier {
             resolved_transaction,
+            chain_context: None,
+        }
+    }
+
+    pub fn with_chain_context(
+        resolved_transaction: &'a ResolvedTransaction,
+        chain_context: &'a ChainContext<CP>,
+    ) -> Self {
+        ScriptVerifier {
+            resolved_transaction,
+            chain_context: Some(chain_context),
         }
     }
 
     pub fn verify(&self, max_cycles: Cycle) -> Result<Cycle, TransactionError> {
-        TransactionScriptsVerifier::new(&self.resolved_transaction)
+        match self.chain_context {
+            Some(chain_context) => TransactionScriptsVerifier::with_chain_context(
+                &self.resolved_transaction,
+                chain_context,
+            )
             .verify(max_cycles)
-            .map_err(TransactionError::ScriptFailure)
+            .map_err(TransactionError::ScriptFailure),
+            None => TransactionScriptsVerifier::<CP>::new(&self.resolved_transaction)
+                .verify(max_cycles)
+                .map_err(TransactionError::ScriptFailure),
+        }
     }
 }
 

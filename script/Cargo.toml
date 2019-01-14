@@ -17,7 +17,10 @@ fnv = "1.0.3"
 flatbuffers = "0.5.0"
 log = "0.4"
 ckb-protocol = { path = "../protocol" }
+ckb-shared = { path = "../shared" }
 
 
 [dev-dependencies]
 proptest = "0.8"
+ckb-chain-spec = { path = "../spec" }
+numext-fixed-uint = { version = "0.1", features = ["support_rand", "support_heapsize", "support_serde"] }

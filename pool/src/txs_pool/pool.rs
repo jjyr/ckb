@@ -456,7 +456,7 @@ where
 
             if unknowns.is_empty() {
                 // TODO: Parallel
-                TransactionVerifier::new(&rtx)
+                TransactionVerifier::<Shared<CI>>::new(&rtx)
                     .verify(self.shared.consensus().max_block_cycles())
                     .map_err(PoolError::InvalidTx)?;
             }
@@ -480,8 +480,8 @@ where
 
         for tx in txs {
             let rtx = self.resolve_transaction(&tx);
-            let rs =
-                TransactionVerifier::new(&rtx).verify(self.shared.consensus().max_block_cycles());
+            let rs = TransactionVerifier::<Shared<CI>>::new(&rtx)
+                .verify(self.shared.consensus().max_block_cycles());
             if rs.is_ok() {
                 self.pool.add_transaction(tx);
             } else if rs == Err(TransactionError::DoubleSpent) {
