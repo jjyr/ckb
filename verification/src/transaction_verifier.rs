@@ -12,43 +12,50 @@ pub struct TransactionVerifier<'a, CP: ChainProvider + Clone> {
     pub capacity: CapacityVerifier<'a>,
     pub duplicate_inputs: DuplicateInputsVerifier<'a>,
     pub inputs: InputVerifier<'a>,
-    pub script: ScriptVerifier<'a, CP>,
+    pub script: Option<ScriptVerifier<'a, CP>>,
+    pub max_cycles: Cycle,
 }
 
 impl<'a, CP: ChainProvider + Clone> TransactionVerifier<'a, CP> {
-    pub fn new(rtx: &'a ResolvedTransaction) -> TransactionVerifier<CP> {
+    pub fn without_script(rtx: &'a ResolvedTransaction) -> TransactionVerifier<CP> {
         TransactionVerifier {
             null: NullVerifier::new(&rtx.transaction),
             empty: EmptyVerifier::new(&rtx.transaction),
             duplicate_inputs: DuplicateInputsVerifier::new(&rtx.transaction),
-            script: ScriptVerifier::new(rtx),
             capacity: CapacityVerifier::new(rtx),
             inputs: InputVerifier::new(rtx),
+            script: None,
+            max_cycles: 0,
         }
     }
 
-    pub fn with_chain_context(
+    pub fn with_script(
         rtx: &'a ResolvedTransaction,
         chain_context: &'a ChainContext<CP>,
+        max_cycles: Cycle,
     ) -> TransactionVerifier<'a, CP> {
         TransactionVerifier {
             null: NullVerifier::new(&rtx.transaction),
             empty: EmptyVerifier::new(&rtx.transaction),
             duplicate_inputs: DuplicateInputsVerifier::new(&rtx.transaction),
-            script: ScriptVerifier::with_chain_context(rtx, chain_context),
+            script: Some(ScriptVerifier::with_chain_context(rtx, chain_context)),
+            max_cycles,
             capacity: CapacityVerifier::new(rtx),
             inputs: InputVerifier::new(rtx),
         }
     }
 
-    pub fn verify(&self, max_cycles: Cycle) -> Result<Cycle, TransactionError> {
+    pub fn verify(&self) -> Result<Cycle, TransactionError> {
         self.empty.verify()?;
         self.null.verify()?;
         self.capacity.verify()?;
         self.duplicate_inputs.verify()?;
         // InputVerifier should be executed before ScriptVerifier
         self.inputs.verify()?;
-        let cycles = self.script.verify(max_cycles)?;
+        let mut cycles = 0;
+        if let Some(ref script) = self.script {
+            cycles = script.verify(self.max_cycles)?;
+        }
         Ok(cycles)
     }
 }

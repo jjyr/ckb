@@ -466,8 +466,8 @@ impl<P: ChainProvider + CellProvider + Clone> TransactionsVerifier<P> {
             .try_fold(
                 || 0,
                 |cycles: Cycle, (index, tx)| {
-                    TransactionVerifier::with_chain_context(&tx, &chain_context)
-                        .verify(max_cycles)
+                    TransactionVerifier::with_script(&tx, &chain_context, max_cycles)
+                        .verify()
                         .map_err(|e| Error::Transactions((index, e)))
                         .and_then(|current_cycles| {
                             cycles
