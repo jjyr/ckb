@@ -1,7 +1,10 @@
 use super::Verifier;
-use crate::error::{DifficultyError, Error, NumberError, PowError, TimestampError};
+use crate::error::{
+    DifficultyError, Error, NumberError, PowError, ScriptCyclesError, TimestampError,
+};
 use crate::shared::ALLOWED_FUTURE_BLOCKTIME;
 use ckb_core::header::Header;
+use ckb_core::Cycle;
 use ckb_pow::PowEngine;
 use ckb_shared::block_median_time_context::BlockMedianTimeContext;
 use faketime::unix_time_as_millis;
@@ -20,14 +23,16 @@ pub trait HeaderResolver {
 pub struct HeaderVerifier<T, M> {
     pub pow: Arc<dyn PowEngine>,
     block_median_time_context: M,
+    max_cycles: Cycle,
     _phantom: PhantomData<T>,
 }
 
 impl<T, M: BlockMedianTimeContext + Clone> HeaderVerifier<T, M> {
-    pub fn new(block_median_time_context: M, pow: Arc<dyn PowEngine>) -> Self {
+    pub fn new(block_median_time_context: M, pow: Arc<dyn PowEngine>, max_cycles: Cycle) -> Self {
         HeaderVerifier {
             pow,
             block_median_time_context,
+            max_cycles,
             _phantom: PhantomData,
         }
     }
@@ -46,6 +51,7 @@ impl<T: HeaderResolver, M: BlockMedianTimeContext + Clone> Verifier for HeaderVe
         NumberVerifier::new(parent, header).verify()?;
         TimestampVerifier::new(self.block_median_time_context.clone(), header).verify()?;
         DifficultyVerifier::verify(target)?;
+        CyclesVerifier::new(header, self.max_cycles).verify()?;
         Ok(())
     }
 }
@@ -154,5 +160,23 @@ impl<'a> PowVerifier<'a> {
         } else {
             Err(Error::Pow(PowError::InvalidProof))
         }
+    }
+}
+
+pub struct CyclesVerifier<'a> {
+    header: &'a Header,
+    max_cycles: Cycle,
+}
+
+impl<'a> CyclesVerifier<'a> {
+    pub fn new(header: &'a Header, max_cycles: Cycle) -> Self {
+        CyclesVerifier { header, max_cycles }
+    }
+
+    pub fn verify(&self) -> Result<(), Error> {
+        if self.header.txs_cycles() > self.max_cycles {
+            return Err(Error::ScriptCycles(ScriptCyclesError::ExceededMaximum));
+        }
+        Ok(())
     }
 }

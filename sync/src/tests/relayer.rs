@@ -26,6 +26,8 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Barrier};
 use std::{thread, time};
 
+const PER_TX_CYCLES: u64 = 2;
+
 #[test]
 fn relay_compact_block_with_one_tx() {
     let faketime_file = faketime::millis_tempfile(0).expect("create faketime file");
@@ -116,6 +118,7 @@ fn relay_compact_block_with_one_tx() {
                     .number(number)
                     .timestamp(timestamp)
                     .difficulty(difficulty)
+                    .txs_cycles(PER_TX_CYCLES)
                     .cellbase_id(cellbase.hash().clone());
 
                 BlockBuilder::default()
@@ -255,6 +258,7 @@ fn relay_compact_block_with_missing_indexs() {
                     .number(number)
                     .timestamp(timestamp)
                     .difficulty(difficulty)
+                    .txs_cycles(txs.len() as u64 * PER_TX_CYCLES)
                     .cellbase_id(cellbase.hash().clone());
 
                 BlockBuilder::default()

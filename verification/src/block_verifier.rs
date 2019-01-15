@@ -1,4 +1,4 @@
-use crate::error::{CellbaseError, CommitError, Error, UnclesError};
+use crate::error::{CellbaseError, CommitError, Error, ScriptCyclesError, UnclesError};
 use crate::header_verifier::HeaderResolver;
 use crate::{TransactionVerifier, Verifier};
 use ckb_core::block::Block;
@@ -454,10 +454,10 @@ impl<P: ChainProvider + CellProvider + Clone> TransactionsVerifier<P> {
             parent_block_hash: parent_hash,
             parent_block_number: parent_number,
         };
-        let max_cycles = self.provider.consensus().max_block_cycles();
+        let expected_cycles = block.header().txs_cycles();
         // make verifiers orthogonal
         // skip first tx, assume the first is cellbase, other verifier will verify cellbase
-        block
+        let cycles = block
             .commit_transactions()
             .par_iter()
             .skip(1)
@@ -466,16 +466,16 @@ impl<P: ChainProvider + CellProvider + Clone> TransactionsVerifier<P> {
             .try_fold(
                 || 0,
                 |cycles: Cycle, (index, tx)| {
-                    TransactionVerifier::with_script(&tx, &chain_context, max_cycles)
+                    TransactionVerifier::with_script(&tx, &chain_context, expected_cycles)
                         .verify()
                         .map_err(|e| Error::Transactions((index, e)))
                         .and_then(|current_cycles| {
                             cycles
                                 .checked_add(current_cycles)
-                                .ok_or(Error::ExceededMaximumCycles)
+                                .ok_or(Error::ScriptCycles(ScriptCyclesError::ExceededMaximum))
                                 .and_then(|new_cycles| {
-                                    if new_cycles > max_cycles {
-                                        Err(Error::ExceededMaximumCycles)
+                                    if new_cycles > expected_cycles {
+                                        Err(Error::ScriptCycles(ScriptCyclesError::ExceededMaximum))
                                     } else {
                                         Ok(new_cycles)
                                     }
@@ -487,17 +487,24 @@ impl<P: ChainProvider + CellProvider + Clone> TransactionsVerifier<P> {
                 || 0,
                 |a, b| {
                     a.checked_add(b)
-                        .ok_or(Error::ExceededMaximumCycles)
+                        .ok_or(Error::ScriptCycles(ScriptCyclesError::ExceededMaximum))
                         .and_then(|cycles| {
-                            if cycles > max_cycles {
-                                Err(Error::ExceededMaximumCycles)
+                            if cycles > expected_cycles {
+                                Err(Error::ScriptCycles(ScriptCyclesError::ExceededMaximum))
                             } else {
                                 Ok(cycles)
                             }
                         })
                 },
-            )
-            .map(|_| ())
+            )?;
+        if cycles == expected_cycles {
+            Ok(())
+        } else {
+            Err(Error::ScriptCycles(ScriptCyclesError::Mismatch {
+                expected: expected_cycles,
+                actual: cycles,
+            }))
+        }
     }
 }
 

@@ -21,6 +21,8 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
+const PER_TX_CYCLES: u64 = 400;
+
 fn gen_block(
     parent_header: Header,
     commit_transactions: Vec<Transaction>,
@@ -37,6 +39,7 @@ fn gen_block(
         .timestamp(now)
         .number(number)
         .difficulty(difficulty)
+        .txs_cycles(commit_transactions.len() as u64 * PER_TX_CYCLES)
         .nonce(nonce);
 
     BlockBuilder::default()

@@ -144,6 +144,7 @@ impl<'a> From<ckb_protocol::Header<'a>> for ckb_core::header::Header {
             .nonce(header.nonce())
             .proof(header.proof().and_then(|b| b.seq()).unwrap().to_vec())
             .uncles_count(header.uncles_count())
+            .txs_cycles(header.txs_cycles())
             .build()
     }
 }

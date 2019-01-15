@@ -211,6 +211,7 @@ pub struct Header {
     pub(crate) cellbase_id: H256,
     pub(crate) uncles_hash: H256,
     pub(crate) uncles_count: u32,
+    pub(crate) txs_cycles: u64,
     pub(crate) seal: Seal,
     #[serde(skip_deserializing)]
     pub(crate) hash: H256,
@@ -229,6 +230,7 @@ impl<'a> From<&'a CoreHeader> for Header {
             cellbase_id: core.cellbase_id().clone(),
             uncles_hash: core.uncles_hash().clone(),
             uncles_count: core.uncles_count(),
+            txs_cycles: core.txs_cycles(),
             seal: core.seal().clone().into(),
             hash: core.hash().clone(),
         }
@@ -248,6 +250,7 @@ impl From<Header> for CoreHeader {
             cellbase_id,
             uncles_hash,
             uncles_count,
+            txs_cycles,
             seal,
             ..
         } = json;
@@ -263,6 +266,7 @@ impl From<Header> for CoreHeader {
             .cellbase_id(cellbase_id)
             .uncles_hash(uncles_hash)
             .uncles_count(uncles_count)
+            .txs_cycles(txs_cycles)
             .seal(seal.into())
             .build()
     }

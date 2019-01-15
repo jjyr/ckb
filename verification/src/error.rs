@@ -1,4 +1,4 @@
-use ckb_core::BlockNumber;
+use ckb_core::{BlockNumber, Cycle};
 use ckb_script::ScriptError;
 use ckb_shared::error::SharedError;
 use numext_fixed_hash::H256;
@@ -40,9 +40,9 @@ pub enum Error {
     /// This error is returned when the committed transactions does not meet the 2-phases
     /// propose-then-commit consensus rule.
     Commit(CommitError),
-    /// Cycles consumed by all scripts in all commit transactions of the block exceed
-    /// the maximum allowed cycles in consensus rules
-    ExceededMaximumCycles,
+    /// Cycles consumed by all scripts in all commit transactions of the block not match txs_cycles
+    /// in the block header
+    ScriptCycles(ScriptCyclesError),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq)]
@@ -130,8 +130,23 @@ pub enum TransactionError {
     UnknownInput,
 }
 
+#[derive(Debug, PartialEq, Clone, Eq)]
+pub enum ScriptCyclesError {
+    /// Cycles consumed by all scripts in all commit transactions of the block exceed
+    /// the maximum allowed cycles in consensus rules
+    ExceededMaximum,
+    /// Actually consumed cycles mismatch with txs_cycles field in the block header
+    Mismatch { expected: Cycle, actual: Cycle },
+}
+
 impl From<SharedError> for Error {
     fn from(e: SharedError) -> Self {
         Error::Chain(e)
+    }
+}
+
+impl From<ScriptCyclesError> for Error {
+    fn from(e: ScriptCyclesError) -> Self {
+        Error::ScriptCycles(e)
     }
 }

@@ -50,6 +50,7 @@ where
                     relayer: self.relayer,
                 },
                 Arc::clone(&self.relayer.shared.consensus().pow_engine()),
+                self.relayer.shared.consensus().max_block_cycles(),
             );
 
             if header_verifier.verify(&resolver).is_ok() {

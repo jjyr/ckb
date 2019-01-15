@@ -200,6 +200,7 @@ where
         let verifier = HeaderVerifier::new(
             resolver.clone(),
             Arc::clone(&self.synchronizer.shared.consensus().pow_engine()),
+            self.synchronizer.shared.consensus().max_block_cycles(),
         );
         let acceptor =
             HeaderAcceptor::new(first, self.peer, &self.synchronizer, resolver, verifier);
@@ -247,6 +248,7 @@ where
                 let verifier = HeaderVerifier::new(
                     resolver.clone(),
                     Arc::clone(&self.synchronizer.shared.consensus().pow_engine()),
+                    self.synchronizer.shared.consensus().max_block_cycles(),
                 );
                 let acceptor =
                     HeaderAcceptor::new(&header, self.peer, &self.synchronizer, resolver, verifier);

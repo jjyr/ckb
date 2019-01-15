@@ -44,6 +44,8 @@ pub struct RawHeader {
     uncles_hash: H256,
     /// Number of the uncles
     uncles_count: u32,
+    /// Sum of txs cycles
+    txs_cycles: u64,
 }
 
 impl RawHeader {
@@ -72,6 +74,10 @@ impl RawHeader {
 
     pub fn mut_uncles_count(&mut self) -> &mut u32 {
         &mut self.uncles_count
+    }
+
+    pub fn txs_cycles(&self) -> u64 {
+        self.txs_cycles
     }
 }
 
@@ -149,6 +155,10 @@ impl Header {
 
     pub fn uncles_count(&self) -> u32 {
         self.raw.uncles_count
+    }
+
+    pub fn txs_cycles(&self) -> u64 {
+        self.raw.txs_cycles
     }
 }
 
@@ -237,6 +247,11 @@ impl HeaderBuilder {
 
     pub fn uncles_count(mut self, uncles_count: u32) -> Self {
         self.inner.raw.uncles_count = uncles_count;
+        self
+    }
+
+    pub fn txs_cycles(mut self, txs_cycles: u64) -> Self {
+        self.inner.raw.txs_cycles = txs_cycles;
         self
     }
 
