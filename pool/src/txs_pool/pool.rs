@@ -28,6 +28,8 @@ pub type TxsReturn = (Vec<ProposalShortId>, Vec<Transaction>);
 #[derive(Clone)]
 pub struct TransactionPoolController {
     get_proposal_commit_transactions_sender: Sender<Request<TxsArgs, TxsReturn>>,
+    get_proposal_transactions_sender: Sender<Request<usize, Vec<ProposalShortId>>>,
+    get_commit_transactions_sender: Sender<Request<usize, Vec<Transaction>>>,
     get_potential_transactions_sender: Sender<Request<(), Vec<Transaction>>>,
     contains_key_sender: Sender<Request<ProposalShortId, bool>>,
     get_transaction_sender: Sender<Request<ProposalShortId, Option<Transaction>>>,
@@ -36,6 +38,8 @@ pub struct TransactionPoolController {
 
 pub struct TransactionPoolReceivers {
     get_proposal_commit_transactions_receiver: Receiver<Request<TxsArgs, TxsReturn>>,
+    get_proposal_transactions_receiver: Receiver<Request<usize, Vec<ProposalShortId>>>,
+    get_commit_transactions_receiver: Receiver<Request<usize, Vec<Transaction>>>,
     get_potential_transactions_receiver: Receiver<Request<(), Vec<Transaction>>>,
     contains_key_receiver: Receiver<Request<ProposalShortId, bool>>,
     get_transaction_receiver: Receiver<Request<ProposalShortId, Option<Transaction>>>,
@@ -45,6 +49,10 @@ pub struct TransactionPoolReceivers {
 impl TransactionPoolController {
     pub fn build() -> (TransactionPoolController, TransactionPoolReceivers) {
         let (get_proposal_commit_transactions_sender, get_proposal_commit_transactions_receiver) =
+            channel::bounded(DEFAULT_CHANNEL_SIZE);
+        let (get_proposal_transactions_sender, get_proposal_transactions_receiver) =
+            channel::bounded(DEFAULT_CHANNEL_SIZE);
+        let (get_commit_transactions_sender, get_commit_transactions_receiver) =
             channel::bounded(DEFAULT_CHANNEL_SIZE);
         let (get_potential_transactions_sender, get_potential_transactions_receiver) =
             channel::bounded(DEFAULT_CHANNEL_SIZE);
@@ -56,6 +64,8 @@ impl TransactionPoolController {
         (
             TransactionPoolController {
                 get_proposal_commit_transactions_sender,
+                get_proposal_transactions_sender,
+                get_commit_transactions_sender,
                 get_potential_transactions_sender,
                 contains_key_sender,
                 get_transaction_sender,
@@ -63,12 +73,24 @@ impl TransactionPoolController {
             },
             TransactionPoolReceivers {
                 get_proposal_commit_transactions_receiver,
+                get_proposal_transactions_receiver,
+                get_commit_transactions_receiver,
                 get_potential_transactions_receiver,
                 contains_key_receiver,
                 get_transaction_receiver,
                 add_transaction_receiver,
             },
         )
+    }
+
+    pub fn get_proposal_transactions(&self, max_proposal_txs: usize) -> Vec<ProposalShortId> {
+        Request::call(&self.get_proposal_transactions_sender, max_proposal_txs)
+            .expect("get_proposal_transactions() failed")
+    }
+
+    pub fn get_commit_transactions(&self, max_commit_txs: usize) -> Vec<Transaction> {
+        Request::call(&self.get_commit_transactions_sender, max_commit_txs)
+            .expect("get_commit_transactions() failed")
     }
 
     pub fn get_proposal_commit_transactions(
@@ -185,6 +207,12 @@ where
                     recv(receivers.get_proposal_commit_transactions_receiver) -> msg => {
                         self.handle_get_proposal_commit_transactions(msg)
                     },
+                    recv(receivers.get_proposal_transactions_receiver) -> msg => {
+                        self.handle_get_proposal_transactions(msg)
+                    },
+                    recv(receivers.get_commit_transactions_receiver) -> msg => {
+                        self.handle_get_commit_transactions(msg)
+                    },
                     recv(receivers.get_potential_transactions_receiver) -> msg => match msg {
                         Ok(Request { responder, ..}) => {
                             let _ = responder.send(self.get_potential_transactions());
@@ -235,6 +263,42 @@ where
             Ok(blocks) => self.switch_fork(&blocks),
             _ => {
                 error!(target: "txs_pool", "channel switch_fork_receiver closed");
+            }
+        }
+    }
+
+    fn handle_get_proposal_transactions(
+        &self,
+        msg: Result<Request<usize, Vec<ProposalShortId>>, channel::RecvError>,
+    ) {
+        match msg {
+            Ok(Request {
+                responder,
+                arguments: max_proposal_txs,
+            }) => {
+                let proposal_transactions = self.prepare_proposal(max_proposal_txs);
+                let _ = responder.send(proposal_transactions);
+            }
+            _ => {
+                error!(target: "txs_pool", "channel get_proposal_transactions_receiver closed");
+            }
+        }
+    }
+
+    fn handle_get_commit_transactions(
+        &self,
+        msg: Result<Request<usize, Vec<Transaction>>, channel::RecvError>,
+    ) {
+        match msg {
+            Ok(Request {
+                responder,
+                arguments: max_commit_txs,
+            }) => {
+                let commit_transactions = self.get_mineable_transactions(max_commit_txs);
+                let _ = responder.send(commit_transactions);
+            }
+            _ => {
+                error!(target: "txs_pool", "channel get_commit_transactions_receiver closed");
             }
         }
     }

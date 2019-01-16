@@ -1,18 +1,22 @@
 use crate::types::BlockTemplate;
 use channel::{self, select, Receiver, Sender};
 use ckb_core::block::{Block, BlockBuilder};
+use ckb_core::cell::CellProvider;
 use ckb_core::header::{Header, HeaderBuilder};
 use ckb_core::service::{Request, DEFAULT_CHANNEL_SIZE};
 use ckb_core::transaction::{CellInput, CellOutput, Transaction, TransactionBuilder};
 use ckb_core::uncle::UncleBlock;
+use ckb_core::Cycle;
 use ckb_notify::NotifyController;
 use ckb_pool::txs_pool::TransactionPoolController;
+use ckb_script::ChainContext;
 use ckb_shared::error::SharedError;
 use ckb_shared::index::ChainIndex;
 use ckb_shared::shared::{ChainProvider, Shared};
+use ckb_verification::TransactionVerifier;
 use faketime::unix_time_as_millis;
 use fnv::{FnvHashMap, FnvHashSet};
-use log::error;
+use log::{debug, error};
 use numext_fixed_hash::H256;
 use std::cmp;
 use std::sync::Arc;
@@ -129,9 +133,8 @@ impl<CI: ChainIndex + 'static> Agent<CI> {
                 .calculate_difficulty(header)
                 .expect("get difficulty");
 
-            let (proposal_transactions, commit_transactions) = self
-                .tx_pool
-                .get_proposal_commit_transactions(max_prop, max_tx);
+            let proposal_transactions = self.tx_pool.get_proposal_transactions(max_prop);
+            let (commit_transactions, txs_cycles) = self.get_verified_commit_transactions(max_tx);
 
             let cellbase =
                 self.create_cellbase_transaction(header, &commit_transactions, type_hash)?;
@@ -141,6 +144,7 @@ impl<CI: ChainIndex + 'static> Agent<CI> {
                 .timestamp(now)
                 .number(header.number() + 1)
                 .difficulty(difficulty)
+                .txs_cycles(txs_cycles)
                 .cellbase_id(cellbase.hash().clone());
             (
                 cellbase,
@@ -163,6 +167,38 @@ impl<CI: ChainIndex + 'static> Agent<CI> {
             commit_transactions: block.commit_transactions().to_vec(),
             proposal_transactions: block.proposal_transactions().to_vec(),
         })
+    }
+
+    fn get_verified_commit_transactions(&self, max_tx: usize) -> (Vec<Transaction>, Cycle) {
+        let mut total_cycles: Cycle = 0;
+        let mut verified_commit_txs = Vec::with_capacity(max_tx);
+        let commit_txs = self.tx_pool.get_commit_transactions(max_tx);
+        let max_block_cycles = self.shared.consensus().max_block_cycles();
+        let chain_context = {
+            let tip_header = self.shared.tip_header().read();
+
+            ChainContext {
+                provider: &self.shared,
+                parent_block_hash: &tip_header.hash(),
+                parent_block_number: tip_header.number(),
+            }
+        };
+        for tx in commit_txs {
+            let resolved_tx = self.shared.resolve_transaction(&tx);
+            let tx_verifier =
+                TransactionVerifier::with_script(&resolved_tx, &chain_context, max_block_cycles);
+            match tx_verifier.verify() {
+                Ok(cycles) => {
+                    total_cycles += cycles;
+                    verified_commit_txs.push(tx);
+                }
+                Err(_) => {
+                    // TODO remove invalid tx?
+                    debug!("reject invalid tx {:?}", tx);
+                }
+            }
+        }
+        (verified_commit_txs, total_cycles)
     }
 
     fn create_cellbase_transaction(
