@@ -1,7 +1,8 @@
 use crate::{
     cost_model::instruction_cycles,
     syscalls::{
-        build_tx, Debugger, LoadBlockInfo, LoadCell, LoadCellByField, LoadInputByField, LoadTx,
+        build_tx, Debugger, LoadAncestorBlockInfo, LoadCell, LoadCellByField, LoadInputByField,
+        LoadTx,
     },
     ScriptError,
 };
@@ -120,11 +121,11 @@ impl<'a, CP: ChainProvider + Clone> TransactionScriptsVerifier<'a, CP> {
         LoadInputByField::new(&self.inputs, current_input)
     }
 
-    fn build_load_block_info(
+    fn build_load_ancestor_block_info(
         &self,
         chain_context: &'a ChainContext<'a, CP>,
-    ) -> LoadBlockInfo<'a, CP> {
-        LoadBlockInfo::new(
+    ) -> LoadAncestorBlockInfo<'a, CP> {
+        LoadAncestorBlockInfo::new(
             &chain_context.provider,
             chain_context.parent_block_hash,
             chain_context.parent_block_number,
@@ -194,7 +195,9 @@ impl<'a, CP: ChainProvider + Clone> TransactionScriptsVerifier<'a, CP> {
                 machine.add_syscall_module(Box::new(self.build_load_cell_by_field(current_cell)));
                 machine.add_syscall_module(Box::new(self.build_load_input_by_field(current_input)));
                 if let Some(chain_context) = self.chain_context {
-                    machine.add_syscall_module(Box::new(self.build_load_block_info(chain_context)));
+                    machine.add_syscall_module(Box::new(
+                        self.build_load_ancestor_block_info(chain_context),
+                    ));
                 }
                 machine.add_syscall_module(Box::new(Debugger::new(prefix)));
                 machine

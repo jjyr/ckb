@@ -1,4 +1,4 @@
-use crate::syscalls::{ITEM_MISSING, LOAD_BLOCK_INFO_SYSCALL_NUMBER, SUCCESS};
+use crate::syscalls::{ITEM_MISSING, LOAD_ANCESTOR_BLOCK_INFO_SYSCALL_NUMBER, SUCCESS};
 use ckb_core::header::{BlockNumber, Header};
 use ckb_protocol::Header as FbsHeader;
 use ckb_shared::shared::ChainProvider;
@@ -7,38 +7,42 @@ use flatbuffers::FlatBufferBuilder;
 use numext_fixed_hash::H256;
 use std::cmp;
 
-const MAX_ANCESTOR_BLOCKS: u64 = 255;
 const BASE_CYCLES: u64 = 100;
 const PER_BYTE_CYCLES: u64 = 100;
 
 #[derive(Debug)]
-pub struct LoadBlockInfo<'a, CP: ChainProvider + Clone> {
+pub struct LoadAncestorBlockInfo<'a, CP: ChainProvider + Clone> {
     provider: &'a CP,
     parent_block_hash: &'a H256,
     parent_block_number: BlockNumber,
 }
 
-impl<'a, CP: ChainProvider + Clone> LoadBlockInfo<'a, CP> {
+impl<'a, CP: ChainProvider + Clone> LoadAncestorBlockInfo<'a, CP> {
     pub fn new(
         provider: &'a CP,
         parent_block_hash: &'a H256,
         parent_block_number: BlockNumber,
-    ) -> LoadBlockInfo<'a, CP> {
-        LoadBlockInfo {
+    ) -> LoadAncestorBlockInfo<'a, CP> {
+        LoadAncestorBlockInfo {
             provider,
             parent_block_hash,
             parent_block_number,
         }
     }
 
-    fn load_block_info(&self, block_number: BlockNumber) -> Option<Header> {
-        self.provider
-            .get_ancestor(&self.parent_block_hash, block_number)
+    /// Return ancestor block info, return parent if ancestor_number is 0
+    fn load_ancestor_block_info(&self, ancestor_number: u8) -> Option<Header> {
+        self.parent_block_number
+            .checked_sub(u64::from(ancestor_number))
+            .and_then(|block_number| {
+                self.provider
+                    .get_ancestor(&self.parent_block_hash, block_number)
+            })
     }
 }
 
 impl<'a, R: Register, M: Memory, CP: ChainProvider + Clone> Syscalls<R, M>
-    for LoadBlockInfo<'a, CP>
+    for LoadAncestorBlockInfo<'a, CP>
 {
     fn initialize(&mut self, _machine: &mut CoreMachine<R, M>) -> Result<(), VMError> {
         Ok(())
@@ -46,7 +50,7 @@ impl<'a, R: Register, M: Memory, CP: ChainProvider + Clone> Syscalls<R, M>
 
     fn ecall(&mut self, machine: &mut CoreMachine<R, M>) -> Result<bool, VMError> {
         let code = machine.registers()[A7].to_u64();
-        if code != LOAD_BLOCK_INFO_SYSCALL_NUMBER {
+        if code != LOAD_ANCESTOR_BLOCK_INFO_SYSCALL_NUMBER {
             return Ok(false);
         }
         machine.add_cycles(BASE_CYCLES);
@@ -55,17 +59,10 @@ impl<'a, R: Register, M: Memory, CP: ChainProvider + Clone> Syscalls<R, M>
         let size_addr = machine.registers()[A1].to_usize();
         let size = machine.memory_mut().load64(size_addr)? as usize;
 
-        let block_number = machine.registers()[A3].to_u64();
+        let ancestor_number = machine.registers()[A3].to_u8();
 
-        // only support load blocks which block number within MAX_ANCESTOR_BLOCKS
-        if block_number > self.parent_block_number
-            || self.parent_block_number - block_number > MAX_ANCESTOR_BLOCKS
-        {
-            machine.registers_mut()[A0] = R::from_u8(ITEM_MISSING);
-            return Ok(true);
-        }
-
-        let header = match self.load_block_info(block_number) {
+        // only support load blocks which block number within std::u8::MAX
+        let header = match self.load_ancestor_block_info(ancestor_number) {
             Some(header) => header,
             None => {
                 machine.registers_mut()[A0] = R::from_u8(ITEM_MISSING);
