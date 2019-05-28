@@ -488,6 +488,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ckb-fee-policy"
+version = "0.1.0"
+dependencies = [
+ "ckb-core 0.14.0-pre",
+ "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "numext-fixed-hash 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "ckb-instrument"
 version = "0.14.0-pre"
 dependencies = [
