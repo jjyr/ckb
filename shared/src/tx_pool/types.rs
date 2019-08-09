@@ -407,3 +407,137 @@ impl TxEntryContainer {
         })
     }
 }
+
+pub(crate) struct TxEntriesPool {
+    txs: HashMap<ProposalShortId, PendingEntry>,
+    sorted_index: BTreeSet<AncestorsScoreSortKey>,
+    /// A map track transaction ancestors and descendants
+    links: HashMap<ProposalShortId, TxLink>,
+}
+
+impl TxEntriesPool {
+    pub(crate) fn new() -> Self {
+        TxEntriesPool {
+            inner: HashMap::default(),
+            sorted_index: Default::default(),
+            links: Default::default(),
+        }
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// update entry ancestor prefix fields
+    fn update_ancestors_stat_for_entry(
+        &self,
+        entry: &mut PendingEntry,
+        parents: &HashSet<ProposalShortId>,
+    ) {
+        for id in parents {
+            let tx_entry = self.inner.get(&id).expect("pool consistent");
+            entry.ancestors_cycles = entry
+                .ancestors_cycles
+                .saturating_add(tx_entry.ancestors_cycles);
+            entry.ancestors_size = entry.ancestors_size.saturating_add(tx_entry.ancestors_size);
+            entry.ancestors_fee = Capacity::shannons(
+                entry
+                    .ancestors_fee
+                    .as_u64()
+                    .saturating_add(tx_entry.ancestors_fee.as_u64()),
+            );
+            entry.ancestors_count = entry
+                .ancestors_count
+                .saturating_add(tx_entry.ancestors_count);
+        }
+    }
+
+    pub(crate) fn add_tx(
+        &mut self,
+        cycles: Cycle,
+        fee: Capacity,
+        size: usize,
+        tx: Transaction,
+    ) -> Option<PendingEntry> {
+        let short_id = tx.proposal_short_id();
+        let mut parents: HashSet<ProposalShortId> =
+            HashSet::with_capacity(tx.inputs().len() + tx.deps().len());
+        for input in tx.inputs() {
+            let parent_hash = &input
+                .previous_output
+                .cell
+                .as_ref()
+                .expect("cell outpoint")
+                .tx_hash;
+            let id = ProposalShortId::from_tx_hash(&parent_hash);
+            if self.links.contains_key(&id) {
+                parents.insert(id);
+            }
+        }
+        for dep in tx.deps() {
+            if let Some(cell_output) = &dep.cell {
+                let id = ProposalShortId::from_tx_hash(&cell_output.tx_hash);
+                if self.links.contains_key(&id) {
+                    parents.insert(id);
+                }
+            }
+        }
+        let mut entry = PendingEntry::new(tx, cycles, fee, size);
+        // update ancestor_fields
+        self.update_ancestors_stat_for_entry(&mut entry, &parents);
+        // insert links
+        self.links.insert(
+            short_id,
+            TxLink {
+                parents,
+                children: Default::default(),
+            },
+        );
+        self.sorted_index
+            .insert(AncestorsScoreSortKey::from(&entry));
+        self.inner.insert(short_id, entry)
+    }
+
+    pub(crate) fn contains_key(&self, id: &ProposalShortId) -> bool {
+        self.inner.contains_key(id)
+    }
+
+    pub(crate) fn get(&self, id: &ProposalShortId) -> Option<&PendingEntry> {
+        self.inner.get(id)
+    }
+
+    pub(crate) fn remove_entry_and_descendants(
+        &mut self,
+        id: &ProposalShortId,
+    ) -> Vec<PendingEntry> {
+        let mut queue = VecDeque::new();
+        let mut removed = Vec::new();
+        queue.push_back(*id);
+        while let Some(id) = queue.pop_front() {
+            if let Some(entry) = self.inner.remove(&id) {
+                let deleted = self
+                    .sorted_index
+                    .remove(&AncestorsScoreSortKey::from(&entry));
+                debug_assert!(deleted, "pending pool inconsistent");
+                if let Some(link) = self.links.remove(&id) {
+                    queue.extend(link.children);
+                }
+                removed.push(entry);
+            }
+        }
+        removed
+    }
+
+    /// find all ancestors from pool
+    pub(crate) fn get_ancestors(&self, tx_short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
+        TxLink::get_ancestors(&self.links, tx_short_id)
+    }
+
+    pub(crate) fn get_descendants(&self, tx_short_id: &ProposalShortId) -> HashSet<ProposalShortId> {
+        TxLink::get_descendants(&self.links, tx_short_id)
+    }
+
+    pub(crate) fn sorted_keys(&self) -> impl Iterator<Item = &ProposalShortId> {
+        self.sorted_index.iter().rev().map(|key| &key.id)
+    }
+}
