@@ -10,7 +10,7 @@ use std::cmp::max;
 use std::collections::HashSet;
 
 /// node will give up to package more txs after MAX_CONSECUTIVE_FAILED
-const MAX_CONSECUTIVE_FAILED: usize = 500;
+const MAX_CONSECUTIVE_FAILED: usize = 1000;
 
 /// find txs to package into commitment
 pub struct CommitTxsScanner<'a> {
