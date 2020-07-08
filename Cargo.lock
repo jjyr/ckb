@@ -1141,8 +1141,7 @@ dependencies = [
 [[package]]
 name = "ckb-vm"
 version = "0.19.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7a75c9a092719293a09da2e233fd7802fe909fa2b88a9256034f1e486a6bc7c"
+source = "git+https://github.com/jjyr/ckb-vm.git?branch=trace-logging#b174a595fe31584e1d09ec5021efcd3fde894bd1"
 dependencies = [
  "byteorder",
  "bytes 0.5.4",
@@ -1151,14 +1150,14 @@ dependencies = [
  "derive_more",
  "goblin 0.2.0",
  "libc",
+ "log 0.4.8",
  "memmap",
 ]
 
 [[package]]
 name = "ckb-vm-definitions"
 version = "0.19.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ce774f97919ed2458881e02ddf431ae82bc6203fbae8d75563b4499126c0ad2"
+source = "git+https://github.com/jjyr/ckb-vm.git?branch=trace-logging#b174a595fe31584e1d09ec5021efcd3fde894bd1"
 
 [[package]]
 name = "clap"
