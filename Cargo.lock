@@ -920,6 +920,7 @@ dependencies = [
  "failure",
  "faster-hex 0.4.1",
  "goblin 0.1.3",
+ "log 0.4.8",
  "proptest",
  "serde",
  "tiny-keccak",
@@ -1141,7 +1142,7 @@ dependencies = [
 [[package]]
 name = "ckb-vm"
 version = "0.19.1"
-source = "git+https://github.com/jjyr/ckb-vm.git?branch=trace-logging#b174a595fe31584e1d09ec5021efcd3fde894bd1"
+source = "git+https://github.com/jjyr/ckb-vm.git?branch=trace-logging#4c6c2092013be20f3f334d87949a8ee5ee807a17"
 dependencies = [
  "byteorder",
  "bytes 0.5.4",
@@ -1157,7 +1158,7 @@ dependencies = [
 [[package]]
 name = "ckb-vm-definitions"
 version = "0.19.1"
-source = "git+https://github.com/jjyr/ckb-vm.git?branch=trace-logging#b174a595fe31584e1d09ec5021efcd3fde894bd1"
+source = "git+https://github.com/jjyr/ckb-vm.git?branch=trace-logging#4c6c2092013be20f3f334d87949a8ee5ee807a17"
 
 [[package]]
 name = "clap"

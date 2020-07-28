@@ -13,6 +13,7 @@ use ckb_vm::{
     registers::{A0, A1, A2, A3, A4, A5, A7},
     Error as VMError, Register, SupportMachine, Syscalls,
 };
+use log::debug;
 
 pub struct LoadCellData<'a, DL> {
     data_loader: &'a DL,
@@ -78,6 +79,11 @@ impl<'a, DL: DataLoader + 'a> LoadCellData<'a, DL> {
         let memory_size = machine.registers()[A1].to_u64();
         let content_offset = machine.registers()[A2].to_u64();
         let content_size = machine.registers()[A3].to_u64();
+
+        debug!(
+            "register values: addr: {} memory_size: {}, content_offset: {} content_size: {}",
+            addr, memory_size, content_offset, content_size
+        );
 
         let index = machine.registers()[A4].to_u64();
         let source = Source::parse_from_u64(machine.registers()[A5].to_u64())?;
